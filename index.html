@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gửi bạn một bông hồng</title>
+<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;overflow:hidden;background:#cfe9f7;font-family:'Lora',Georgia,serif}
+  canvas{position:fixed;inset:0;width:100%;height:100%;display:block}
+  #hint{position:fixed;left:0;right:0;bottom:7%;text-align:center;color:#b0486c;font-style:italic;font-size:clamp(14px,2.4vw,18px);
+        text-shadow:0 1px 8px rgba(255,255,255,.9);pointer-events:none;opacity:0;transition:opacity 1s;animation:pulse 2.4s ease-in-out infinite}
+  #hint.on{opacity:1}
+  @keyframes pulse{50%{transform:translateY(-4px);filter:brightness(1.1)}}
+
+  #modal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:18px;
+         background:rgba(255,240,245,.35);backdrop-filter:blur(8px);opacity:0;pointer-events:none;transition:opacity .6s;perspective:1200px}
+  #modal.on{opacity:1;pointer-events:auto}
+  .card{position:relative;width:min(400px,100%);max-height:92vh;overflow:auto;background:linear-gradient(160deg,#fffaf6,#f9eee9);
+        border-radius:14px;padding:36px 30px 26px;text-align:center;color:#4b3f45;
+        box-shadow:0 24px 70px rgba(150,60,90,.35),inset 0 0 0 1px rgba(214,120,150,.25);
+        transform:rotateX(-25deg) translateY(30px) scale(.9);transform-origin:top;transition:transform .9s cubic-bezier(.2,.9,.3,1.2)}
+  #modal.on .card{transform:none}
+  .card::before{content:"";position:absolute;inset:10px;border:1px solid rgba(214,120,150,.35);border-radius:8px;pointer-events:none}
+  .card img{width:54px;height:54px;margin-bottom:6px}
+  .date{letter-spacing:.35em;font-size:12px;color:#c0587a;margin-bottom:10px}
+  h1{font-size:clamp(24px,6vw,31px);line-height:1.3;font-weight:600;color:#a63a62;margin-bottom:6px}
+  .sub{font-style:italic;font-size:14px;color:#7a6670;margin-bottom:18px}
+  .card p{font-size:14px;line-height:1.8;margin-bottom:12px}
+  .sign{font-style:italic;color:#a63a62;margin-top:16px}
+  button{font:inherit;font-size:13px;margin-top:12px;padding:9px 22px;border-radius:999px;border:1px solid #e6b8c8;background:#fff;color:#a63a62;cursor:pointer;transition:.2s}
+  button:hover{background:#fdeef3;transform:translateY(-2px)}
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<div id="hint">✿ Chạm vào bông hoa để mở thiệp ✿</div>
+
+<div id="modal">
+  <div class="card">
+    <img id="icon" alt="">
+    <div class="date">20 · 10</div>
+    <h1>Chúc mừng ngày<br>Phụ nữ Việt Nam</h1>
+    <div class="sub">Gửi <span id="name">bạn</span> thương mến,</div>
+    <p>Một bông hoa có thể làm một ngày thêm đẹp.<br>Còn bạn, làm thế giới này dịu dàng hơn.</p>
+    <p>Nhân ngày 20/10, chúc bạn luôn được yêu thương, trân trọng và có thật nhiều niềm vui. Mong bạn đủ bình yên để tận hưởng những điều nhỏ bé, đủ tự tin để theo đuổi những điều mình yêu.</p>
+    <p class="sign">Mong những điều đẹp đẽ luôn nở bên bạn ♡</p>
+    <button id="close">Đóng thiệp</button>
+  </div>
+</div>
+
+<script>
+// Đổi tên người nhận: garden.html?to=Lan
+const to = new URLSearchParams(location.search).get('to');
+if (to) document.getElementById('name').textContent = to;
+
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+let W, H, dpr;
+const rnd = (a, b) => a + Math.random() * (b - a);
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const easeOut = t => 1 - Math.pow(1 - t, 3);
+const easeBack = t => 1 + 2.4 * Math.pow(t - 1, 3) + 1.4 * Math.pow(t - 1, 2);
+const mixc = (a, b, k) => a.map((v, i) => Math.round(v + (b[i] - v) * k));
+const rgb = c => `rgb(${c[0]},${c[1]},${c[2]})`;
+
+function resize(){
+  dpr = Math.min(devicePixelRatio || 1, 2);
+  W = innerWidth; H = innerHeight;
+  cv.width = W * dpr; cv.height = H * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+// ---------- Vẽ hoa hồng: từng lớp cánh riêng để còn "nở" ----------
+const S = 640, R0 = S * 0.46;
+const TIP = [255, 205, 220], MID = [240, 105, 150], DARK = [150, 22, 70];
+
+function petalPath(g, h, w){
+  g.beginPath();
+  g.moveTo(0, 0);
+  g.bezierCurveTo(-w * .6, -h * .15, -w * .78, -h * .7, -w * .36, -h * .95);
+  g.quadraticCurveTo(0, -h * 1.1, w * .36, -h * .95);
+  g.bezierCurveTo(w * .78, -h * .7, w * .6, -h * .15, 0, 0);
+  g.closePath();
+}
+
+const RINGS = [
+  { n: 6, h: .98, w: .92, push: .06 },
+  { n: 5, h: .84, w: .86, push: .07 },
+  { n: 5, h: .70, w: .80, push: .06 },
+  { n: 4, h: .56, w: .74, push: .05 },
+  { n: 4, h: .42, w: .66, push: .04 },
+  { n: 3, h: .28, w: .58, push: .02 },
+];
+function makeRing(cfg, idx){
+  const c = document.createElement('canvas'); c.width = c.height = S;
+  const g = c.getContext('2d');
+  g.translate(S / 2, S / 2);
+  const depth = idx / (RINGS.length - 1);               // 0 = ngoài, 1 = tâm
+  const off = idx * 0.93 + 0.3;
+  for (let i = 0; i < cfg.n; i++){
+    g.save();
+    g.rotate(off + (i / cfg.n) * Math.PI * 2 + rnd(-.08, .08));
+    g.translate(0, -cfg.push * R0);
+    const h = R0 * cfg.h * rnd(.95, 1.04), w = R0 * cfg.w * rnd(.95, 1.05);
+    // bóng đổ xuống lớp bên dưới
+    g.shadowColor = 'rgba(110,10,50,.45)'; g.shadowBlur = S * 0.03; g.shadowOffsetY = S * 0.006;
+    petalPath(g, h, w);
+    const gr = g.createLinearGradient(0, 0, 0, -h);
+    const tip = mixc(TIP, DARK, depth * .35), mid = mixc(MID, DARK, depth * .45), dk = mixc(DARK, [90, 8, 40], depth * .5);
+    gr.addColorStop(0, rgb(dk)); gr.addColorStop(.45, rgb(mid)); gr.addColorStop(.9, rgb(tip));
+    g.fillStyle = gr; g.fill();
+    g.shadowColor = 'transparent';
+    // viền sáng mép cánh
+    petalPath(g, h, w);
+    g.lineWidth = S * 0.006; g.strokeStyle = 'rgba(255,235,242,.55)'; g.stroke();
+    // đường gân mềm
+    g.beginPath(); g.moveTo(0, -h * .08);
+    g.quadraticCurveTo(w * .08, -h * .5, 0, -h * .85);
+    g.strokeStyle = 'rgba(120,10,50,.22)'; g.lineWidth = S * 0.005; g.stroke();
+    // ánh sáng mềm trên cánh
+    const hl = g.createRadialGradient(-w * .15, -h * .8, 0, -w * .15, -h * .8, w * .45);
+    hl.addColorStop(0, 'rgba(255,255,255,.35)'); hl.addColorStop(1, 'rgba(255,255,255,0)');
+    petalPath(g, h, w); g.fillStyle = hl; g.fill();
+    g.restore();
+  }
+  // nhụy cuộn ở lớp trong cùng
+  if (idx === RINGS.length - 1){
+    const cg = g.createRadialGradient(0, 0, 0, 0, 0, R0 * .2);
+    cg.addColorStop(0, 'rgb(95,6,42)'); cg.addColorStop(1, 'rgba(150,22,70,0)');
+    g.fillStyle = cg; g.beginPath(); g.arc(0, 0, R0 * .2, 0, 7); g.fill();
+    g.strokeStyle = 'rgba(255,200,218,.55)'; g.lineCap = 'round'; g.lineWidth = S * 0.008;
+    for (let k = 0; k < 3; k++){
+      g.beginPath(); g.arc(Math.cos(k * 2.1) * R0 * .03, Math.sin(k * 2.1) * R0 * .03, R0 * (.05 + k * .045), k * 2.1, k * 2.1 + 3.6); g.stroke();
+    }
+  }
+  return c;
+}
+let ringSprites = [], petalSprite;
+function makeAll(){
+  ringSprites = RINGS.map(makeRing);
+  // cánh hoa nhỏ để rơi
+  petalSprite = document.createElement('canvas'); petalSprite.width = 70; petalSprite.height = 90;
+  const g = petalSprite.getContext('2d'); g.translate(35, 82);
+  petalPath(g, 76, 56);
+  const gr = g.createLinearGradient(0, 0, 0, -76);
+  gr.addColorStop(0, rgb(DARK)); gr.addColorStop(.5, rgb(MID)); gr.addColorStop(1, rgb(TIP));
+  g.fillStyle = gr; g.fill();
+  const icon = document.createElement('canvas'); icon.width = icon.height = 160;
+  const ig = icon.getContext('2d'); ringSprites.forEach(r => ig.drawImage(r, 0, 0, 160, 160));
+  document.getElementById('icon').src = icon.toDataURL();
+}
+
+// ---------- Cảnh ----------
+let T0, last = 0, flower = {}, particles = [], opened = false, nextPetal = 0;
+const clouds = Array.from({ length: 6 }, () => ({ x: rnd(0, 1), y: rnd(.04, .32), w: rnd(.16, .3), v: rnd(.002, .006) }));
+const sparkles = Array.from({ length: 26 }, () => ({ a: rnd(0, 6.28), d: rnd(.7, 2.1), ph: rnd(0, 6.28), s: rnd(1.5, 3.5) }));
+
+function layout(){
+  const R = Math.min(W * .5, H * .38) * .62;
+  flower = { R, x: W / 2, y: H * .38, baseY: H * 1.02 };
+}
+
+function drawSky(dt){
+  const sky = ctx.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0, '#7cc4ee'); sky.addColorStop(.6, '#c4e5f7'); sky.addColorStop(1, '#f1e6ee');
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
+  clouds.forEach(c => {
+    c.x += c.v * dt; if (c.x > 1.4) c.x = -.4;
+    const cx = c.x * W, cy = c.y * H, w = c.w * W;
+    for (let i = 0; i < 4; i++){
+      const g = ctx.createRadialGradient(cx + i * w * .22, cy, 0, cx + i * w * .22, cy, w * .3);
+      g.addColorStop(0, 'rgba(255,255,255,.85)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = g; ctx.fillRect(cx - w, cy - w, w * 3, w * 2);
+    }
+  });
+  // đồi cỏ mềm
+  const hill = ctx.createLinearGradient(0, H * .82, 0, H);
+  hill.addColorStop(0, '#bfe3b4'); hill.addColorStop(1, '#8fc98c');
+  ctx.fillStyle = hill; ctx.beginPath(); ctx.moveTo(0, H);
+  ctx.lineTo(0, H * .92); ctx.quadraticCurveTo(W * .3, H * .84, W * .55, H * .91);
+  ctx.quadraticCurveTo(W * .8, H * .96, W, H * .88); ctx.lineTo(W, H); ctx.fill();
+}
+
+function leaf(x, y, len, ang, flip){
+  ctx.save(); ctx.translate(x, y); ctx.rotate(ang); ctx.scale(flip, 1);
+  ctx.beginPath(); ctx.moveTo(0, 0);
+  ctx.bezierCurveTo(len * .25, -len * .32, len * .75, -len * .3, len, 0);
+  ctx.bezierCurveTo(len * .75, len * .26, len * .25, len * .28, 0, 0);
+  const g = ctx.createLinearGradient(0, 0, len, 0);
+  g.addColorStop(0, '#2f7a45'); g.addColorStop(1, '#66b36e');
+  ctx.fillStyle = g; ctx.fill();
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(len * .5, -len * .04, len * .92, 0);
+  ctx.strokeStyle = 'rgba(220,255,220,.55)'; ctx.lineWidth = 1.2; ctx.stroke();
+  ctx.restore();
+}
+
+function drawFlower(t){
+  const { R, x, y, baseY } = flower;
+  const sway = Math.sin(t * 1.1) * R * .05;
+  const topX = x + sway, topY = y + R * .1;
+  const P0 = [x, baseY], P1 = [x - R * .22 + sway * .4, (baseY + topY) / 2], P2 = [topX, topY];
+  const at = u => [(1 - u) ** 2 * P0[0] + 2 * (1 - u) * u * P1[0] + u * u * P2[0],
+                   (1 - u) ** 2 * P0[1] + 2 * (1 - u) * u * P1[1] + u * u * P2[1]];
+
+  const sp = easeOut(clamp(t / 1.8));            // thân mọc
+  const bp = clamp((t - 1.5) / 3.2);              // hoa nở
+
+  // quầng sáng phía sau
+  if (bp > 0){
+    const g = ctx.createRadialGradient(topX, topY, 0, topX, topY, R * 2.2);
+    g.addColorStop(0, `rgba(255,200,220,${.55 * bp})`); g.addColorStop(1, 'rgba(255,200,220,0)');
+    ctx.fillStyle = g; ctx.fillRect(topX - R * 2.3, topY - R * 2.3, R * 4.6, R * 4.6);
+  }
+  // thân
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.strokeStyle = '#3b8a4f'; ctx.lineWidth = Math.max(4, R * .075);
+  ctx.beginPath(); ctx.moveTo(...P0);
+  for (let i = 1; i <= 30; i++) ctx.lineTo(...at(i / 30 * sp));
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(190,240,190,.35)'; ctx.lineWidth = Math.max(1.5, R * .02);
+  ctx.beginPath(); ctx.moveTo(P0[0] - 1.5, P0[1]);
+  for (let i = 1; i <= 30; i++){ const p = at(i / 30 * sp); ctx.lineTo(p[0] - 1.5, p[1]); }
+  ctx.stroke();
+  // lá + gai
+  [[.38, 1, -.35, .62], [.58, -1, .35, .5]].forEach(([u, flip, a, sc]) => {
+    const k = easeOut(clamp((sp - u) / .35));
+    if (k > 0){ const p = at(u); leaf(p[0], p[1], R * sc * k, flip < 0 ? Math.PI + a : a, 1); }
+  });
+  [.25, .48, .7].forEach((u, i) => {
+    if (sp > u + .1){ const p = at(u); ctx.fillStyle = '#2d6f40'; ctx.beginPath();
+      const d = i % 2 ? 1 : -1; ctx.moveTo(p[0], p[1] - 4); ctx.lineTo(p[0] + d * 9, p[1] - 9); ctx.lineTo(p[0], p[1] + 3); ctx.fill(); }
+  });
+
+  // hoa nở từng lớp (ngoài -> trong)
+  if (bp > 0){
+    const pulse = 1 + (hover ? .04 : 0) + Math.sin(t * 2) * .006;
+    ctx.save(); ctx.translate(topX, topY); ctx.rotate(Math.sin(t * 1.1) * .03); ctx.scale(pulse, pulse);
+    const size = R * 2.1;
+    ringSprites.forEach((spr, i) => {
+      const k = easeBack(clamp((bp - i * .09) / .55));
+      if (k <= 0) return;
+      const s = size * (.3 + .7 * k);
+      ctx.globalAlpha = clamp(k * 1.6);
+      ctx.save(); ctx.rotate((1 - k) * (i % 2 ? .9 : -.9));
+      ctx.drawImage(spr, -s / 2, -s / 2, s, s); ctx.restore();
+    });
+    ctx.restore();
+  }
+  // lấp lánh
+  if (bp > .8){
+    sparkles.forEach(s => {
+      const a = .5 + .5 * Math.sin(t * 2 + s.ph), r = R * s.d;
+      const px = topX + Math.cos(s.a + t * .08) * r, py = topY + Math.sin(s.a + t * .08) * r * .8;
+      ctx.fillStyle = `rgba(255,255,255,${.75 * a})`; ctx.beginPath(); ctx.arc(px, py, s.s * a, 0, 7); ctx.fill();
+    });
+  }
+}
+
+function spawnPetal(burst){
+  const { R, x, y } = flower;
+  const ang = rnd(0, 6.28), sp = burst ? rnd(120, 420) : rnd(10, 40);
+  particles.push({
+    x: x + (burst ? 0 : rnd(-R * .6, R * .6)), y: y + (burst ? 0 : rnd(-R * .3, R * .5)),
+    vx: Math.cos(ang) * sp, vy: burst ? Math.sin(ang) * sp - 160 : rnd(10, 30),
+    rot: rnd(0, 6.28), vr: rnd(-3, 3), s: rnd(.18, .42) * (R / 150), ph: rnd(0, 6.28), life: 0
+  });
+}
+function drawPetals(dt, t){
+  particles = particles.filter(p => p.y < H + 60);
+  particles.forEach(p => {
+    p.life += dt;
+    p.vy += 95 * dt; p.vy = Math.min(p.vy, 90 + p.s * 80);
+    p.vx *= .985; p.x += (p.vx + Math.sin(t * 1.5 + p.ph) * 22) * dt; p.y += p.vy * dt; p.rot += p.vr * dt;
+    ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+    ctx.scale(p.s, p.s * (.6 + .4 * Math.abs(Math.cos(p.rot * 1.3))));
+    ctx.globalAlpha = .92; ctx.drawImage(petalSprite, -35, -82); ctx.restore();
+  });
+}
+
+let hover = false;
+function frame(now){
+  const t = (now - T0) / 1000, dt = Math.min(.05, (now - last) / 1000 || .016); last = now;
+  drawSky(dt);
+  drawFlower(t);
+  if (t > 4.6 && t > nextPetal){ spawnPetal(false); nextPetal = t + rnd(.9, 1.8); }
+  drawPetals(dt, t);
+  document.getElementById('hint').classList.toggle('on', t > 4.6 && !opened);
+  requestAnimationFrame(frame);
+}
+
+// ---------- Tương tác ----------
+function hit(e){
+  const { R, x, y } = flower, topY = y + R * .1;
+  return Math.hypot(e.clientX - x, e.clientY - topY) < R * 1.15 && (performance.now() - T0) / 1000 > 3;
+}
+cv.addEventListener('pointermove', e => { hover = hit(e); cv.style.cursor = hover ? 'pointer' : 'default'; });
+cv.addEventListener('pointerdown', e => {
+  if (!hit(e) || opened) return;
+  opened = true;
+  for (let i = 0; i < 45; i++) spawnPetal(true);
+  setTimeout(() => modal.classList.add('on'), 600);
+});
+const modal = document.getElementById('modal');
+document.getElementById('close').onclick = () => { modal.classList.remove('on'); opened = false; };
+modal.addEventListener('pointerdown', e => { if (e.target === modal){ modal.classList.remove('on'); opened = false; } });
+
+addEventListener('resize', () => { resize(); layout(); });
+resize(); layout(); makeAll();
+T0 = performance.now(); requestAnimationFrame(frame);
+</script>
+</body>
+</html>
